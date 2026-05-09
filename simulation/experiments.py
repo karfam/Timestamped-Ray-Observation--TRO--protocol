@@ -20,6 +20,8 @@ from .plots import (
     plot_sync_vs_tro,
     plot_test1a_packet_loss,
     plot_test1b_heterogeneous_rates,
+    plot_test2a_delay_sweep,
+    plot_test2b_jitter_sweep,
     plot_trajectory,
     plot_window,
 )
@@ -228,6 +230,94 @@ def run_test1b_heterogeneous_rates(exp_config: ExperimentConfig) -> pd.DataFrame
             "method",
         ],
         plot_test1b_heterogeneous_rates,
+    )
+
+
+def run_test2a_delay_sweep(exp_config: ExperimentConfig) -> pd.DataFrame:
+    """Test 2A: delay sweep for arrival-time fusion versus timestamp-aware TRO."""
+    conditions = []
+    delays = [0.0, 0.05, 0.10, 0.25, 0.50, 1.00]
+    losses = [0.0, 0.05, 0.10]
+    methods = ["arrival_time_fusion", "tro_timestamp_aware_fusion"]
+    for loss_index, packet_loss in enumerate(losses):
+        for delay_index, delay_s in enumerate(delays):
+            seed_group = loss_index * len(delays) + delay_index
+            for method in methods:
+                sim = _timestamp_baseline_sim_config(exp_config.duration_s or 60.0)
+                network = NetworkConfig(packet_loss=packet_loss, delay_mode="fixed", fixed_delay_s=delay_s)
+                fusion = _timestamp_baseline_fusion_config(method)
+                conditions.append(
+                    (
+                        f"loss_{packet_loss:g}_delay_{delay_s:g}_{method}",
+                        sim,
+                        network,
+                        fusion,
+                        {
+                            "test": "test2_arrival_time_fusion_baseline",
+                            "experiment_id": "2A",
+                            "packet_loss": packet_loss,
+                            "delay_s": delay_s,
+                            "target_speed_mps": sim.target_speed_mps,
+                            "uav_count": sim.num_uavs,
+                            "method": method,
+                            "_seed_group": seed_group,
+                        },
+                    )
+                )
+    return _run_conditions(
+        "test2a_delay_sweep",
+        exp_config,
+        conditions,
+        ["experiment", "test", "experiment_id", "packet_loss", "delay_s", "target_speed_mps", "uav_count", "method"],
+        plot_test2a_delay_sweep,
+    )
+
+
+def run_test2b_jitter_sweep(exp_config: ExperimentConfig) -> pd.DataFrame:
+    """Test 2B: delay-jitter sweep for arrival-time fusion versus timestamp-aware TRO."""
+    conditions = []
+    mean_delay_s = 0.25
+    jitters = [0.0, 0.05, 0.10, 0.25, 0.50]
+    packet_loss = 0.05
+    methods = ["arrival_time_fusion", "tro_timestamp_aware_fusion"]
+    for jitter_index, jitter_s in enumerate(jitters):
+        for method in methods:
+            sim = _timestamp_baseline_sim_config(exp_config.duration_s or 60.0)
+            if jitter_s == 0.0:
+                network = NetworkConfig(packet_loss=packet_loss, delay_mode="fixed", fixed_delay_s=mean_delay_s)
+            else:
+                network = NetworkConfig(
+                    packet_loss=packet_loss,
+                    delay_mode="normal",
+                    normal_delay_mean_s=mean_delay_s,
+                    normal_delay_std_s=jitter_s,
+                )
+            fusion = _timestamp_baseline_fusion_config(method)
+            conditions.append(
+                (
+                    f"jitter_{jitter_s:g}_{method}",
+                    sim,
+                    network,
+                    fusion,
+                    {
+                        "test": "test2_arrival_time_fusion_baseline",
+                        "experiment_id": "2B",
+                        "packet_loss": packet_loss,
+                        "mean_delay_s": mean_delay_s,
+                        "jitter_s": jitter_s,
+                        "target_speed_mps": sim.target_speed_mps,
+                        "uav_count": sim.num_uavs,
+                        "method": method,
+                        "_seed_group": jitter_index,
+                    },
+                )
+            )
+    return _run_conditions(
+        "test2b_jitter_sweep",
+        exp_config,
+        conditions,
+        ["experiment", "test", "experiment_id", "packet_loss", "mean_delay_s", "jitter_s", "target_speed_mps", "uav_count", "method"],
+        plot_test2b_jitter_sweep,
     )
 
 
@@ -481,6 +571,41 @@ def _sync_baseline_fusion_config(method: str, num_uavs: int) -> FusionConfig:
     )
 
 
+def _timestamp_baseline_sim_config(duration_s: float) -> SimulationConfig:
+    return SimulationConfig(
+        num_uavs=4,
+        duration_s=duration_s,
+        fusion_rate_hz=5.0,
+        observation_rates_hz=[5.0, 5.0, 5.0, 5.0],
+        moving_target=True,
+        target_speed_mps=10.0,
+        angular_noise_std_deg=0.5,
+        position_noise_std_m=1.0,
+    )
+
+
+def _timestamp_baseline_fusion_config(method: str) -> FusionConfig:
+    if method == "arrival_time_fusion":
+        return FusionConfig(
+            fusion_mode="legacy_sliding_window",
+            sliding_window_s=0.5,
+            timing_mode="arrival_time",
+            buffer_mode="sliding_window",
+            stale_time_s=2.0,
+            min_uavs_for_estimate=2,
+        )
+    if method == "tro_timestamp_aware_fusion":
+        return FusionConfig(
+            fusion_mode="tro_sliding_window_fusion",
+            sliding_window_s=0.75,
+            timing_mode="capture_time",
+            buffer_mode="sliding_window",
+            stale_time_s=0.75,
+            min_uavs_for_estimate=2,
+        )
+    raise ValueError(f"unknown timestamp baseline method: {method}")
+
+
 def _sync_vs_tro_summary_row(
     condition: dict[str, object],
     method: str,
@@ -631,6 +756,8 @@ def run_all(exp_config: ExperimentConfig) -> pd.DataFrame:
         run_ideal_baseline(exp_config),
         run_test1a_packet_loss_sweep(exp_config),
         run_test1b_heterogeneous_rates(exp_config),
+        run_test2a_delay_sweep(exp_config),
+        run_test2b_jitter_sweep(exp_config),
         run_packet_loss_sweep(exp_config),
         run_delay_sweep(exp_config),
         run_window_sweep(exp_config),
@@ -661,12 +788,13 @@ def _run_conditions(
     completed = 0
     for condition_index, (condition_name, sim, network, fusion, labels) in enumerate(conditions):
         for run in range(exp_config.monte_carlo_runs):
-            seed = exp_config.seed + condition_index * 1000 + run
+            seed_group = int(labels.get("_seed_group", condition_index))
+            seed = exp_config.seed + seed_group * 1000 + run
             completed += 1
             print(f"[{experiment_name}] run {completed}/{total}: {condition_name}, seed={seed}")
             time_series, summary = run_single_simulation(sim, network, fusion, seed=seed)
             row: dict[str, object] = {"experiment": experiment_name, "condition_name": condition_name, "run": run, "seed": seed}
-            row.update(labels)
+            row.update({key: value for key, value in labels.items() if not key.startswith("_")})
             row.update(summary)
             run_summaries.append(row)
             ts = time_series.copy()
@@ -674,6 +802,8 @@ def _run_conditions(
             ts.insert(1, "condition_name", condition_name)
             ts.insert(2, "run", run)
             for key, value in labels.items():
+                if key.startswith("_"):
+                    continue
                 ts[key] = value
             time_series_frames.append(ts)
 
@@ -700,6 +830,12 @@ EXPERIMENTS: dict[str, Callable[[ExperimentConfig], pd.DataFrame]] = {
     "test1b_heterogeneous_rates": run_test1b_heterogeneous_rates,
     "sync_heterogeneous_rates": run_test1b_heterogeneous_rates,
     "synchronized_heterogeneous_rates": run_test1b_heterogeneous_rates,
+    "test2a_delay_sweep": run_test2a_delay_sweep,
+    "arrival_delay_sweep": run_test2a_delay_sweep,
+    "timestamp_delay_sweep": run_test2a_delay_sweep,
+    "test2b_jitter_sweep": run_test2b_jitter_sweep,
+    "arrival_jitter_sweep": run_test2b_jitter_sweep,
+    "timestamp_jitter_sweep": run_test2b_jitter_sweep,
     "delay": run_delay_sweep,
     "window": run_window_sweep,
     "sliding_window": run_window_sweep,

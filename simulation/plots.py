@@ -61,6 +61,21 @@ def plot_test1b_heterogeneous_rates(summary: pd.DataFrame, output_dir: Path) -> 
     line_plot(summary, "packet_loss", "mean_active_rays", output_dir, "test1b_rays_vs_packet_loss", "Packet loss probability", "Mean active rays", "method")
 
 
+def plot_test2a_delay_sweep(summary: pd.DataFrame, output_dir: Path) -> None:
+    line_plot(summary, "delay_s", "rmse_m", output_dir, "test2a_rmse_vs_delay", "Communication delay (s)", "RMSE (m)", "method")
+    line_plot(summary, "delay_s", "p95_error_m", output_dir, "test2a_p95_error_vs_delay", "Communication delay (s)", "95th percentile error (m)", "method")
+    line_plot(summary, "delay_s", "mean_observation_age_s", output_dir, "test2a_age_vs_delay", "Communication delay (s)", "Mean observation age (s)", "method")
+    line_plot(summary, "delay_s", "stale_rejection_rate", output_dir, "test2a_stale_rejection_vs_delay", "Communication delay (s)", "Stale rejection rate", "method")
+    line_plot(summary, "delay_s", "estimate_availability_pct", output_dir, "test2a_availability_vs_delay", "Communication delay (s)", "Availability (%)", "method")
+
+
+def plot_test2b_jitter_sweep(summary: pd.DataFrame, output_dir: Path) -> None:
+    line_plot(summary, "jitter_s", "rmse_m", output_dir, "test2b_rmse_vs_jitter", "Delay jitter std. dev. (s)", "RMSE (m)", "method")
+    line_plot(summary, "jitter_s", "p95_error_m", output_dir, "test2b_p95_error_vs_jitter", "Delay jitter std. dev. (s)", "95th percentile error (m)", "method")
+    line_plot(summary, "jitter_s", "mean_observation_age_s", output_dir, "test2b_age_vs_jitter", "Delay jitter std. dev. (s)", "Mean observation age (s)", "method")
+    line_plot(summary, "jitter_s", "estimate_availability_pct", output_dir, "test2b_availability_vs_jitter", "Delay jitter std. dev. (s)", "Availability (%)", "method")
+
+
 def plot_delay(summary: pd.DataFrame, output_dir: Path) -> None:
     line_plot(summary, "delay_s", "rmse_m", output_dir, "rmse_vs_delay", "Communication delay (s)", "RMSE (m)", "timing_mode")
     line_plot(summary, "delay_s", "mean_observation_age_s", output_dir, "capture_vs_arrival_age", "Communication delay (s)", "Mean observation age (s)", "timing_mode")
