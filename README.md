@@ -35,6 +35,9 @@ python -m simulation.main --experiment test3a_latest_only_packet_loss
 python -m simulation.main --experiment test3b_window_duration_sweep
 python -m simulation.main --experiment test4a_unweighted_bearing_fusion
 python -m simulation.main --experiment test5a_false_detection_injection
+python -m simulation.main --experiment test6_image_sharing_baseline
+python -m simulation.main --experiment test6a_payload_bandwidth_comparison
+python -m simulation.main --experiment test6b_bandwidth_limited_channel
 python -m simulation.main --experiment delay
 python -m simulation.main --experiment packet_loss
 python -m simulation.main --experiment bandwidth
@@ -71,6 +74,9 @@ python -m simulation.main --experiment all --output-dir outputs_paper
 - `test3b_window_duration_sweep`: Test 3B TRO sliding-window duration sweep from 0.1 s to 2.0 s with 20% packet loss and target speeds 0, 5, 10, and 20 m/s.
 - `test4a_unweighted_bearing_fusion`: Test 4A unweighted bearing fusion baseline with mixed per-UAV bearing quality `[0.5, 0.5, 2.0, 5.0]` degrees, packet loss from 0% to 10%, low delay, static and slow targets, comparing equal-weight fusion against TRO confidence/uncertainty-weighted fusion.
 - `test5a_false_detection_injection`: Test 5A false detection injection baseline, sweeping false observation rates from 0% to 20% with 5% and 10% packet loss, 100 ms delay, static and slow targets, comparing TRO without residual gating against TRO with residual gating.
+- `test6_image_sharing_baseline`: Test 6 image-sharing communication baseline, combining Test 6A and Test 6B.
+- `test6a_payload_bandwidth_comparison`: Test 6A payload bandwidth comparison for 48-64 byte TRO messages, 5-30 kB image crops, and 50-200 kB full frames across 2, 4, 6, and 8 UAVs at 1, 5, and 10 Hz.
+- `test6b_bandwidth_limited_channel`: Test 6B bandwidth-limited channel sweep for 4 UAVs at 5 and 10 Hz over 10, 25, 50, 100, 500, and 1000 kbps links.
 - `packet_loss`: packet loss sweep from 0 to 50%, comparing TRO sliding-window fusion with a latest-only baseline.
 - `delay`: fixed delay sweep comparing capture-time buffering with an arrival-time baseline for a moving target.
 - `window`: sliding-window duration sweep for target speeds 0, 2, and 10 m/s.
@@ -87,6 +93,7 @@ Per experiment:
 - `<experiment>_per_run_summary.csv`: one row per Monte Carlo run and condition.
 - `<experiment>_summary.csv`: condition-level mean summary metrics.
 - `<experiment>_time_series.csv`: per-fusion-cycle metrics where applicable.
+- `test6a_payload_bandwidth_comparison_summary.csv`, `test6b_bandwidth_limited_channel_summary.csv`, and `test6_image_sharing_baseline_summary.csv`: analytic Test 6 communication-capacity outputs.
 
 Consolidated:
 
@@ -119,6 +126,7 @@ Summary rows include:
 - Total, mean, and maximum residual-gated rejected observations.
 - Packet and stale rejection statistics.
 - Estimated payload bandwidth in bytes/s and kbit/s.
+- Test 6 analytic communication metrics: messages per second, payload bandwidth, channel load, delivered and dropped packets per second, drop fraction, serialization delay, end-to-end delay, and operational feasibility under each bandwidth limit.
 
 ## Package Structure
 

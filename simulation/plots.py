@@ -121,6 +121,40 @@ def plot_test5a_false_detection_injection(summary: pd.DataFrame, output_dir: Pat
     line_plot(data, "false_observation_rate", "estimate_availability_pct", output_dir, "test5a_availability_vs_false_observations", "False observation probability", "Availability (%)", "method_loss_speed")
 
 
+def plot_test6a_payload_bandwidth_comparison(summary: pd.DataFrame, output_dir: Path) -> None:
+    if summary.empty or "method" not in summary or "payload_case" not in summary:
+        return
+    data = summary.copy()
+    data["method_payload_rate"] = (
+        data["method"].astype(str)
+        + ", "
+        + data["payload_case"].astype(str)
+        + ", "
+        + data["update_rate_hz"].astype(str)
+        + " Hz"
+    )
+    line_plot(data, "num_uavs", "payload_kbit_per_s", output_dir, "test6a_payload_bandwidth_vs_uavs", "Number of UAVs", "Payload bandwidth (kbit/s)", "method_payload_rate")
+    line_plot(data, "num_uavs", "channel_load_pct", output_dir, "test6a_channel_load_vs_uavs", "Number of UAVs", "Reference channel load (%)", "method_payload_rate")
+    line_plot(data, "num_uavs", "dropped_packets_per_s", output_dir, "test6a_drops_vs_uavs", "Number of UAVs", "Estimated dropped packets/s", "method_payload_rate")
+
+
+def plot_test6b_bandwidth_limited_channel(summary: pd.DataFrame, output_dir: Path) -> None:
+    if summary.empty or "method" not in summary or "payload_case" not in summary:
+        return
+    data = summary.copy()
+    data["method_payload_rate"] = (
+        data["method"].astype(str)
+        + ", "
+        + data["payload_case"].astype(str)
+        + ", "
+        + data["update_rate_hz"].astype(str)
+        + " Hz"
+    )
+    line_plot(data, "available_bandwidth_kbps", "channel_load_pct", output_dir, "test6b_channel_load_vs_bandwidth", "Available bandwidth (kbps)", "Channel load (%)", "method_payload_rate")
+    line_plot(data, "available_bandwidth_kbps", "drop_fraction_pct", output_dir, "test6b_drop_fraction_vs_bandwidth", "Available bandwidth (kbps)", "Dropped packets (%)", "method_payload_rate")
+    line_plot(data, "available_bandwidth_kbps", "end_to_end_delay_ms", output_dir, "test6b_delay_vs_bandwidth", "Available bandwidth (kbps)", "Estimated end-to-end delay (ms)", "method_payload_rate")
+
+
 def plot_delay(summary: pd.DataFrame, output_dir: Path) -> None:
     line_plot(summary, "delay_s", "rmse_m", output_dir, "rmse_vs_delay", "Communication delay (s)", "RMSE (m)", "timing_mode")
     line_plot(summary, "delay_s", "mean_observation_age_s", output_dir, "capture_vs_arrival_age", "Communication delay (s)", "Mean observation age (s)", "timing_mode")

@@ -26,6 +26,8 @@ from .plots import (
     plot_test3b_window_duration_sweep,
     plot_test4a_unweighted_bearing_fusion,
     plot_test5a_false_detection_injection,
+    plot_test6a_payload_bandwidth_comparison,
+    plot_test6b_bandwidth_limited_channel,
     plot_trajectory,
     plot_window,
 )
@@ -630,6 +632,56 @@ def run_test5a_false_detection_injection(exp_config: ExperimentConfig) -> pd.Dat
     )
 
 
+def run_test6a_payload_bandwidth_comparison(exp_config: ExperimentConfig) -> pd.DataFrame:
+    """Test 6A: payload bandwidth comparison against image-sharing baselines."""
+    rows = _image_sharing_rows(
+        experiment="test6a_payload_bandwidth_comparison",
+        num_uavs_values=[2, 4, 6, 8],
+        update_rates_hz=[1.0, 5.0, 10.0],
+        available_bandwidth_kbps_values=[1000.0],
+        include_all_payload_cases=True,
+    )
+    frame = pd.DataFrame(rows)
+    output_dir = exp_config.output_dir
+    ensure_output_dirs(output_dir)
+    frame.to_csv(output_dir / "test6a_payload_bandwidth_comparison_summary.csv", index=False)
+    if exp_config.make_plots:
+        plot_test6a_payload_bandwidth_comparison(frame, output_dir)
+    return frame
+
+
+def run_test6b_bandwidth_limited_channel(exp_config: ExperimentConfig) -> pd.DataFrame:
+    """Test 6B: channel feasibility under bandwidth-limited links."""
+    rows = _image_sharing_rows(
+        experiment="test6b_bandwidth_limited_channel",
+        num_uavs_values=[4],
+        update_rates_hz=[5.0, 10.0],
+        available_bandwidth_kbps_values=[10.0, 25.0, 50.0, 100.0, 500.0, 1000.0],
+        include_all_payload_cases=True,
+    )
+    frame = pd.DataFrame(rows)
+    output_dir = exp_config.output_dir
+    ensure_output_dirs(output_dir)
+    frame.to_csv(output_dir / "test6b_bandwidth_limited_channel_summary.csv", index=False)
+    if exp_config.make_plots:
+        plot_test6b_bandwidth_limited_channel(frame, output_dir)
+    return frame
+
+
+def run_test6_image_sharing_baseline(exp_config: ExperimentConfig) -> pd.DataFrame:
+    """Test 6: image-sharing communication baseline, combining 6A and 6B."""
+    summary = pd.concat(
+        [
+            run_test6a_payload_bandwidth_comparison(exp_config),
+            run_test6b_bandwidth_limited_channel(exp_config),
+        ],
+        ignore_index=True,
+        sort=False,
+    )
+    summary.to_csv(exp_config.output_dir / "test6_image_sharing_baseline_summary.csv", index=False)
+    return summary
+
+
 def run_delay_sweep(exp_config: ExperimentConfig) -> pd.DataFrame:
     """Experiment 3: delay sweep comparing capture-time and arrival-time modes."""
     conditions = []
@@ -704,6 +756,99 @@ def run_bandwidth_calculation(exp_config: ExperimentConfig) -> pd.DataFrame:
     if exp_config.make_plots:
         plot_bandwidth(frame, output_dir)
     return frame
+
+
+def _image_sharing_rows(
+    experiment: str,
+    num_uavs_values: list[int],
+    update_rates_hz: list[float],
+    available_bandwidth_kbps_values: list[float],
+    include_all_payload_cases: bool,
+) -> list[dict[str, object]]:
+    payload_profiles = [
+        ("tro_communication", "min", 48),
+        ("tro_communication", "max", 64),
+        ("cropped_image_sharing", "min", 5_000),
+        ("cropped_image_sharing", "nominal", 17_500),
+        ("cropped_image_sharing", "max", 30_000),
+        ("full_frame_image_sharing", "min", 50_000),
+        ("full_frame_image_sharing", "nominal", 125_000),
+        ("full_frame_image_sharing", "max", 200_000),
+    ]
+    if not include_all_payload_cases:
+        payload_profiles = [profile for profile in payload_profiles if profile[1] in {"max", "nominal"}]
+
+    rows: list[dict[str, object]] = []
+    for num_uavs in num_uavs_values:
+        for update_rate_hz in update_rates_hz:
+            messages_per_s = float(num_uavs * update_rate_hz)
+            for method, payload_case, payload_bytes in payload_profiles:
+                payload_bytes_per_s, payload_kbit_per_s = payload_bandwidth(num_uavs, update_rate_hz, payload_bytes)
+                for available_bandwidth_kbps in available_bandwidth_kbps_values:
+                    rows.append(
+                        _channel_capacity_row(
+                            experiment=experiment,
+                            method=method,
+                            payload_case=payload_case,
+                            payload_bytes=payload_bytes,
+                            num_uavs=num_uavs,
+                            update_rate_hz=update_rate_hz,
+                            messages_per_s=messages_per_s,
+                            payload_bytes_per_s=payload_bytes_per_s,
+                            payload_kbit_per_s=payload_kbit_per_s,
+                            available_bandwidth_kbps=available_bandwidth_kbps,
+                        )
+                    )
+    return rows
+
+
+def _channel_capacity_row(
+    experiment: str,
+    method: str,
+    payload_case: str,
+    payload_bytes: int,
+    num_uavs: int,
+    update_rate_hz: float,
+    messages_per_s: float,
+    payload_bytes_per_s: float,
+    payload_kbit_per_s: float,
+    available_bandwidth_kbps: float,
+) -> dict[str, object]:
+    channel_load = payload_kbit_per_s / available_bandwidth_kbps if available_bandwidth_kbps > 0 else float("inf")
+    delivered_fraction = min(1.0, 1.0 / channel_load) if channel_load > 0 else 1.0
+    drop_fraction = max(0.0, 1.0 - delivered_fraction)
+    dropped_packets_per_s = messages_per_s * drop_fraction
+    serialization_delay_s = payload_bytes * 8.0 / (available_bandwidth_kbps * 1000.0)
+    end_to_end_delay_s = _estimated_channel_delay_s(serialization_delay_s, channel_load)
+    return {
+        "experiment": experiment,
+        "test": "test6_image_sharing_communication_baseline",
+        "experiment_id": "6A" if experiment.startswith("test6a") else "6B",
+        "method": method,
+        "payload_case": payload_case,
+        "payload_bytes": payload_bytes,
+        "num_uavs": num_uavs,
+        "update_rate_hz": update_rate_hz,
+        "messages_per_s": messages_per_s,
+        "payload_bytes_per_s": payload_bytes_per_s,
+        "payload_kbit_per_s": payload_kbit_per_s,
+        "available_bandwidth_kbps": available_bandwidth_kbps,
+        "channel_load": channel_load,
+        "channel_load_pct": channel_load * 100.0,
+        "delivered_packets_per_s": messages_per_s - dropped_packets_per_s,
+        "dropped_packets_per_s": dropped_packets_per_s,
+        "drop_fraction": drop_fraction,
+        "drop_fraction_pct": drop_fraction * 100.0,
+        "serialization_delay_ms": serialization_delay_s * 1000.0,
+        "end_to_end_delay_ms": end_to_end_delay_s * 1000.0,
+        "operational": channel_load <= 1.0,
+    }
+
+
+def _estimated_channel_delay_s(serialization_delay_s: float, channel_load: float) -> float:
+    if channel_load >= 1.0:
+        return float("inf")
+    return serialization_delay_s * (1.0 + channel_load / max(1.0 - channel_load, 1.0e-9))
 
 
 def run_smoke(exp_config: ExperimentConfig) -> pd.DataFrame:
@@ -1094,6 +1239,7 @@ def run_all(exp_config: ExperimentConfig) -> pd.DataFrame:
         run_test3b_window_duration_sweep(exp_config),
         run_test4a_unweighted_bearing_fusion(exp_config),
         run_test5a_false_detection_injection(exp_config),
+        run_test6_image_sharing_baseline(exp_config),
         run_packet_loss_sweep(exp_config),
         run_delay_sweep(exp_config),
         run_window_sweep(exp_config),
@@ -1185,6 +1331,13 @@ EXPERIMENTS: dict[str, Callable[[ExperimentConfig], pd.DataFrame]] = {
     "test5_false_detection": run_test5a_false_detection_injection,
     "false_detection_injection": run_test5a_false_detection_injection,
     "fusion_without_residual_gating": run_test5a_false_detection_injection,
+    "test6_image_sharing_baseline": run_test6_image_sharing_baseline,
+    "test6_image_sharing": run_test6_image_sharing_baseline,
+    "image_sharing_baseline": run_test6_image_sharing_baseline,
+    "test6a_payload_bandwidth_comparison": run_test6a_payload_bandwidth_comparison,
+    "test6a_payload_bandwidth": run_test6a_payload_bandwidth_comparison,
+    "test6b_bandwidth_limited_channel": run_test6b_bandwidth_limited_channel,
+    "test6b_bandwidth_limited": run_test6b_bandwidth_limited_channel,
     "delay": run_delay_sweep,
     "window": run_window_sweep,
     "sliding_window": run_window_sweep,
