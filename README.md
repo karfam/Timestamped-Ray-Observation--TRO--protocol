@@ -28,6 +28,7 @@ Run a selected experiment:
 
 ```bash
 python -m simulation.main --experiment test1a_packet_loss
+python -m simulation.main --experiment test1b_heterogeneous_rates
 python -m simulation.main --experiment delay
 python -m simulation.main --experiment packet_loss
 python -m simulation.main --experiment bandwidth
@@ -57,6 +58,7 @@ python -m simulation.main --experiment all --output-dir outputs_paper
 
 - `ideal`: no packet loss, no delay, static target, configurable bearing noise.
 - `test1a_packet_loss`: Test 1A synchronized bearing fusion baseline, sweeping packet loss from 0% to 50% and comparing strict synchronized fusion with TRO sliding-window fusion.
+- `test1b_heterogeneous_rates`: Test 1B heterogeneous UAV update rates `[10, 5, 2, 1]` Hz with 0% to 10% packet loss, comparing strict synchronized fusion with TRO sliding-window fusion.
 - `packet_loss`: packet loss sweep from 0 to 50%, comparing TRO sliding-window fusion with a latest-only baseline.
 - `delay`: fixed delay sweep comparing capture-time buffering with an arrival-time baseline for a moving target.
 - `window`: sliding-window duration sweep for target speeds 0, 2, and 10 m/s.

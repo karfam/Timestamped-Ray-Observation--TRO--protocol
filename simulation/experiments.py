@@ -13,7 +13,16 @@ from .config import ExperimentConfig, FusionConfig, NetworkConfig, SimulationCon
 from .fusion_node import FusionNode
 from .metrics import MetricsRecorder, aggregate_runs, summarize_time_series
 from .network_model import NetworkModel
-from .plots import plot_bandwidth, plot_delay, plot_packet_loss, plot_sync_vs_tro, plot_test1a_packet_loss, plot_trajectory, plot_window
+from .plots import (
+    plot_bandwidth,
+    plot_delay,
+    plot_packet_loss,
+    plot_sync_vs_tro,
+    plot_test1a_packet_loss,
+    plot_test1b_heterogeneous_rates,
+    plot_trajectory,
+    plot_window,
+)
 from .scenario import Scenario
 from .tro_message import payload_bandwidth
 from .utils import ensure_output_dirs, make_rng
@@ -160,6 +169,65 @@ def run_test1a_packet_loss_sweep(exp_config: ExperimentConfig) -> pd.DataFrame:
         conditions,
         ["experiment", "test", "experiment_id", "packet_loss", "delay_s", "target_speed_mps", "uav_count", "method"],
         plot_test1a_packet_loss,
+    )
+
+
+def run_test1b_heterogeneous_rates(exp_config: ExperimentConfig) -> pd.DataFrame:
+    """Test 1B: heterogeneous UAV update rates for synchronized fusion versus TRO."""
+    conditions = []
+    losses = [0.0, 0.05, 0.10]
+    rates = [10.0, 5.0, 2.0, 1.0]
+    methods = ["synchronized_bearing_fusion", "tro_sliding_window_fusion"]
+    for packet_loss in losses:
+        for method in methods:
+            sim = SimulationConfig(
+                num_uavs=4,
+                duration_s=exp_config.duration_s or 60.0,
+                fusion_rate_hz=5.0,
+                observation_rates_hz=rates,
+                moving_target=False,
+                target_speed_mps=0.0,
+                angular_noise_std_deg=0.5,
+                position_noise_std_m=1.0,
+            )
+            network = NetworkConfig(packet_loss=packet_loss, delay_mode="fixed", fixed_delay_s=0.0)
+            fusion = _sync_baseline_fusion_config(method, sim.num_uavs)
+            conditions.append(
+                (
+                    f"loss_{packet_loss:g}_{method}",
+                    sim,
+                    network,
+                    fusion,
+                    {
+                        "test": "test1_synchronized_bearing_fusion_baseline",
+                        "experiment_id": "1B",
+                        "packet_loss": packet_loss,
+                        "delay_s": 0.0,
+                        "target_speed_mps": 0.0,
+                        "uav_count": sim.num_uavs,
+                        "uav_rates_hz": ";".join(f"{rate:g}" for rate in rates),
+                        "fusion_rate_hz": sim.fusion_rate_hz,
+                        "method": method,
+                    },
+                )
+            )
+    return _run_conditions(
+        "test1b_heterogeneous_rates",
+        exp_config,
+        conditions,
+        [
+            "experiment",
+            "test",
+            "experiment_id",
+            "packet_loss",
+            "delay_s",
+            "target_speed_mps",
+            "uav_count",
+            "uav_rates_hz",
+            "fusion_rate_hz",
+            "method",
+        ],
+        plot_test1b_heterogeneous_rates,
     )
 
 
@@ -562,6 +630,7 @@ def run_all(exp_config: ExperimentConfig) -> pd.DataFrame:
     frames = [
         run_ideal_baseline(exp_config),
         run_test1a_packet_loss_sweep(exp_config),
+        run_test1b_heterogeneous_rates(exp_config),
         run_packet_loss_sweep(exp_config),
         run_delay_sweep(exp_config),
         run_window_sweep(exp_config),
@@ -628,6 +697,9 @@ EXPERIMENTS: dict[str, Callable[[ExperimentConfig], pd.DataFrame]] = {
     "test1a_packet_loss": run_test1a_packet_loss_sweep,
     "sync_packet_loss": run_test1a_packet_loss_sweep,
     "synchronized_packet_loss": run_test1a_packet_loss_sweep,
+    "test1b_heterogeneous_rates": run_test1b_heterogeneous_rates,
+    "sync_heterogeneous_rates": run_test1b_heterogeneous_rates,
+    "synchronized_heterogeneous_rates": run_test1b_heterogeneous_rates,
     "delay": run_delay_sweep,
     "window": run_window_sweep,
     "sliding_window": run_window_sweep,
