@@ -37,10 +37,13 @@ class SimulationConfig:
     circular_uav_motion: bool = False
     uav_angular_speed_rad_s: float = 0.02
     angular_noise_std_deg: float = 0.5
+    per_uav_angular_noise_std_deg: Sequence[float] | None = None
     position_noise_std_m: float = 0.5
     confidence_mean: float = 0.9
+    per_uav_confidence_mean: Sequence[float] | None = None
     confidence_std: float = 0.05
     angular_uncertainty_deg: float = 0.5
+    per_uav_angular_uncertainty_deg: Sequence[float] | None = None
     outlier_rate: float = 0.0
     seed: int = 7
 
@@ -55,12 +58,24 @@ class SimulationConfig:
             raise ValueError("observation_rates_hz length must equal num_uavs")
         if self.observation_start_offsets_s is not None and len(self.observation_start_offsets_s) != self.num_uavs:
             raise ValueError("observation_start_offsets_s length must equal num_uavs")
+        if self.per_uav_angular_noise_std_deg is not None and len(self.per_uav_angular_noise_std_deg) != self.num_uavs:
+            raise ValueError("per_uav_angular_noise_std_deg length must equal num_uavs")
+        if self.per_uav_confidence_mean is not None and len(self.per_uav_confidence_mean) != self.num_uavs:
+            raise ValueError("per_uav_confidence_mean length must equal num_uavs")
+        if self.per_uav_angular_uncertainty_deg is not None and len(self.per_uav_angular_uncertainty_deg) != self.num_uavs:
+            raise ValueError("per_uav_angular_uncertainty_deg length must equal num_uavs")
         if any(rate <= 0 for rate in self.observation_rates_hz):
             raise ValueError("all observation rates must be positive")
         if self.observation_start_offsets_s is not None and any(offset < 0 for offset in self.observation_start_offsets_s):
             raise ValueError("observation_start_offsets_s values must be non-negative")
         if self.angular_noise_std_deg < 0 or self.position_noise_std_m < 0:
             raise ValueError("noise values must be non-negative")
+        if self.per_uav_angular_noise_std_deg is not None and any(value < 0 for value in self.per_uav_angular_noise_std_deg):
+            raise ValueError("per-UAV angular noise values must be non-negative")
+        if self.per_uav_angular_uncertainty_deg is not None and any(value < 0 for value in self.per_uav_angular_uncertainty_deg):
+            raise ValueError("per-UAV angular uncertainty values must be non-negative")
+        if self.per_uav_confidence_mean is not None and any(not 0.0 <= value <= 1.0 for value in self.per_uav_confidence_mean):
+            raise ValueError("per-UAV confidence means must be in [0, 1]")
         if not 0.0 <= self.outlier_rate <= 1.0:
             raise ValueError("outlier_rate must be in [0, 1]")
 

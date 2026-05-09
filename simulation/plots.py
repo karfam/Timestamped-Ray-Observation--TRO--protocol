@@ -90,6 +90,18 @@ def plot_test3b_window_duration_sweep(summary: pd.DataFrame, output_dir: Path) -
     line_plot(summary, "sliding_window_s", "mean_observation_age_s", output_dir, "test3b_age_vs_window", "Sliding window duration (s)", "Mean observation age (s)", "target_speed_mps")
 
 
+def plot_test4a_unweighted_bearing_fusion(summary: pd.DataFrame, output_dir: Path) -> None:
+    if summary.empty or "target_speed_mps" not in summary or "method" not in summary:
+        return
+    data = summary.copy()
+    data["method_speed"] = data["method"].astype(str) + ", speed=" + data["target_speed_mps"].astype(str) + " m/s"
+    line_plot(data, "packet_loss", "rmse_m", output_dir, "test4a_rmse_vs_packet_loss", "Packet loss probability", "RMSE (m)", "method_speed")
+    line_plot(data, "packet_loss", "median_error_m", output_dir, "test4a_median_error_vs_packet_loss", "Packet loss probability", "Median error (m)", "method_speed")
+    line_plot(data, "packet_loss", "p95_error_m", output_dir, "test4a_p95_error_vs_packet_loss", "Packet loss probability", "95th percentile error (m)", "method_speed")
+    line_plot(data, "packet_loss", "mean_residual_m", output_dir, "test4a_mean_residual_vs_packet_loss", "Packet loss probability", "Mean residual (m)", "method_speed")
+    line_plot(data, "packet_loss", "max_residual_m", output_dir, "test4a_max_residual_vs_packet_loss", "Packet loss probability", "Maximum residual (m)", "method_speed")
+
+
 def plot_delay(summary: pd.DataFrame, output_dir: Path) -> None:
     line_plot(summary, "delay_s", "rmse_m", output_dir, "rmse_vs_delay", "Communication delay (s)", "RMSE (m)", "timing_mode")
     line_plot(summary, "delay_s", "mean_observation_age_s", output_dir, "capture_vs_arrival_age", "Communication delay (s)", "Mean observation age (s)", "timing_mode")

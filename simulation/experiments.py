@@ -24,6 +24,7 @@ from .plots import (
     plot_test2b_jitter_sweep,
     plot_test3a_latest_only_packet_loss,
     plot_test3b_window_duration_sweep,
+    plot_test4a_unweighted_bearing_fusion,
     plot_trajectory,
     plot_window,
 )
@@ -449,6 +450,95 @@ def run_test3b_window_duration_sweep(exp_config: ExperimentConfig) -> pd.DataFra
             "method",
         ],
         plot_test3b_window_duration_sweep,
+    )
+
+
+def run_test4a_unweighted_bearing_fusion(exp_config: ExperimentConfig) -> pd.DataFrame:
+    """Test 4A: unweighted bearing fusion baseline under mixed observation quality."""
+    conditions = []
+    losses = [0.0, 0.05, 0.10]
+    speeds = [0.0, 2.0]
+    noise_deg = [0.5, 0.5, 2.0, 5.0]
+    confidence_means = [0.95, 0.95, 0.70, 0.40]
+    uncertainty_deg = noise_deg
+    methods = [
+        ("unweighted_bearing_fusion", "equal"),
+        ("tro_weighted_fusion", "combined"),
+    ]
+    for speed_index, speed in enumerate(speeds):
+        for loss_index, packet_loss in enumerate(losses):
+            seed_group = speed_index * len(losses) + loss_index
+            for method, weight_mode in methods:
+                sim = SimulationConfig(
+                    num_uavs=4,
+                    duration_s=exp_config.duration_s or 60.0,
+                    fusion_rate_hz=5.0,
+                    observation_rates_hz=[5.0, 5.0, 5.0, 5.0],
+                    moving_target=speed > 0.0,
+                    target_speed_mps=speed,
+                    angular_noise_std_deg=0.5,
+                    per_uav_angular_noise_std_deg=noise_deg,
+                    position_noise_std_m=1.0,
+                    confidence_mean=0.9,
+                    per_uav_confidence_mean=confidence_means,
+                    confidence_std=0.03,
+                    angular_uncertainty_deg=0.5,
+                    per_uav_angular_uncertainty_deg=uncertainty_deg,
+                )
+                network = NetworkConfig(packet_loss=packet_loss, delay_mode="fixed", fixed_delay_s=0.02)
+                fusion = FusionConfig(
+                    fusion_mode="tro_sliding_window_fusion",
+                    sliding_window_s=0.5,
+                    timing_mode="capture_time",
+                    buffer_mode="sliding_window",
+                    weight_mode=weight_mode,
+                    residual_gating=False,
+                    stale_time_s=0.5,
+                    min_uavs_for_estimate=2,
+                )
+                conditions.append(
+                    (
+                        f"speed_{speed:g}_loss_{packet_loss:g}_{method}",
+                        sim,
+                        network,
+                        fusion,
+                        {
+                            "test": "test4_unweighted_bearing_fusion_baseline",
+                            "experiment_id": "4A",
+                            "packet_loss": packet_loss,
+                            "delay_s": network.fixed_delay_s,
+                            "target_speed_mps": speed,
+                            "uav_count": sim.num_uavs,
+                            "bearing_noise_deg_by_uav": ";".join(f"{value:g}" for value in noise_deg),
+                            "confidence_mean_by_uav": ";".join(f"{value:g}" for value in confidence_means),
+                            "angular_uncertainty_deg_by_uav": ";".join(f"{value:g}" for value in uncertainty_deg),
+                            "sliding_window_s": fusion.sliding_window_s,
+                            "weight_mode": weight_mode,
+                            "method": method,
+                            "_seed_group": seed_group,
+                        },
+                    )
+                )
+    return _run_conditions(
+        "test4a_unweighted_bearing_fusion",
+        exp_config,
+        conditions,
+        [
+            "experiment",
+            "test",
+            "experiment_id",
+            "packet_loss",
+            "delay_s",
+            "target_speed_mps",
+            "uav_count",
+            "bearing_noise_deg_by_uav",
+            "confidence_mean_by_uav",
+            "angular_uncertainty_deg_by_uav",
+            "sliding_window_s",
+            "weight_mode",
+            "method",
+        ],
+        plot_test4a_unweighted_bearing_fusion,
     )
 
 
@@ -914,6 +1004,7 @@ def run_all(exp_config: ExperimentConfig) -> pd.DataFrame:
         run_test2b_jitter_sweep(exp_config),
         run_test3a_latest_only_packet_loss(exp_config),
         run_test3b_window_duration_sweep(exp_config),
+        run_test4a_unweighted_bearing_fusion(exp_config),
         run_packet_loss_sweep(exp_config),
         run_delay_sweep(exp_config),
         run_window_sweep(exp_config),
@@ -998,6 +1089,9 @@ EXPERIMENTS: dict[str, Callable[[ExperimentConfig], pd.DataFrame]] = {
     "test3b_window_duration_sweep": run_test3b_window_duration_sweep,
     "latest_only_window_sweep": run_test3b_window_duration_sweep,
     "test3_window_sweep": run_test3b_window_duration_sweep,
+    "test4a_unweighted_bearing_fusion": run_test4a_unweighted_bearing_fusion,
+    "test4_unweighted": run_test4a_unweighted_bearing_fusion,
+    "unweighted_bearing_fusion": run_test4a_unweighted_bearing_fusion,
     "delay": run_delay_sweep,
     "window": run_window_sweep,
     "sliding_window": run_window_sweep,

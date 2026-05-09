@@ -52,6 +52,21 @@ class Scenario:
         true_origin = self.uav_position(uav_id, capture_time)
         target = self.target_position(capture_time)
         noisy_origin = true_origin + self.rng.normal(0.0, self.config.position_noise_std_m, size=3)
+        angular_noise_std_deg = self._per_uav_value(
+            self.config.per_uav_angular_noise_std_deg,
+            self.config.angular_noise_std_deg,
+            uav_id,
+        )
+        confidence_mean = self._per_uav_value(
+            self.config.per_uav_confidence_mean,
+            self.config.confidence_mean,
+            uav_id,
+        )
+        angular_uncertainty_deg = self._per_uav_value(
+            self.config.per_uav_angular_uncertainty_deg,
+            self.config.angular_uncertainty_deg,
+            uav_id,
+        )
 
         if self.rng.random() < self.config.outlier_rate:
             direction = random_unit_vector(self.rng)
@@ -61,19 +76,19 @@ class Scenario:
             ideal_direction = normalize(target - true_origin)
             direction = add_angular_noise(
                 ideal_direction,
-                math.radians(self.config.angular_noise_std_deg),
+                math.radians(angular_noise_std_deg),
                 self.rng,
             )
             flags = 0
             confidence = float(
                 np.clip(
-                    self.rng.normal(self.config.confidence_mean, self.config.confidence_std),
+                    self.rng.normal(confidence_mean, self.config.confidence_std),
                     0.05,
                     1.0,
                 )
             )
 
-        angular_uncertainty = max(math.radians(self.config.angular_uncertainty_deg), 1.0e-6)
+        angular_uncertainty = max(math.radians(angular_uncertainty_deg), 1.0e-6)
         return TROMessage(
             version=1,
             msg_type=1,
@@ -88,6 +103,12 @@ class Scenario:
             confidence=confidence,
             angular_uncertainty=angular_uncertainty,
         )
+
+    @staticmethod
+    def _per_uav_value(values: list[float] | tuple[float, ...] | None, default: float, uav_id: int) -> float:
+        if values is None:
+            return default
+        return float(values[uav_id])
 
     def _initial_uav_positions(self) -> list[np.ndarray]:
         center = np.asarray(self.config.target_initial_position_m, dtype=float)
