@@ -25,6 +25,7 @@ from .plots import (
     plot_test3a_latest_only_packet_loss,
     plot_test3b_window_duration_sweep,
     plot_test4a_unweighted_bearing_fusion,
+    plot_test5a_false_detection_injection,
     plot_trajectory,
     plot_window,
 )
@@ -542,6 +543,93 @@ def run_test4a_unweighted_bearing_fusion(exp_config: ExperimentConfig) -> pd.Dat
     )
 
 
+def run_test5a_false_detection_injection(exp_config: ExperimentConfig) -> pd.DataFrame:
+    """Test 5A: false detection injection with and without residual gating."""
+    conditions = []
+    false_observation_rates = [0.0, 0.05, 0.10, 0.20]
+    packet_losses = [0.05, 0.10]
+    target_speeds = [0.0, 2.0]
+    methods = [
+        ("tro_without_residual_gating", False),
+        ("tro_with_residual_gating", True),
+    ]
+    delay_s = 0.10
+    for speed_index, speed in enumerate(target_speeds):
+        for loss_index, packet_loss in enumerate(packet_losses):
+            for rate_index, false_observation_rate in enumerate(false_observation_rates):
+                seed_group = speed_index * len(packet_losses) * len(false_observation_rates) + loss_index * len(false_observation_rates) + rate_index
+                for method, residual_gating in methods:
+                    sim = SimulationConfig(
+                        num_uavs=4,
+                        duration_s=exp_config.duration_s or 60.0,
+                        fusion_rate_hz=5.0,
+                        observation_rates_hz=[5.0, 5.0, 5.0, 5.0],
+                        moving_target=speed > 0.0,
+                        target_speed_mps=speed,
+                        angular_noise_std_deg=0.5,
+                        position_noise_std_m=1.0,
+                        outlier_rate=false_observation_rate,
+                    )
+                    network = NetworkConfig(packet_loss=packet_loss, delay_mode="fixed", fixed_delay_s=delay_s)
+                    fusion = FusionConfig(
+                        fusion_mode="tro_sliding_window_fusion",
+                        sliding_window_s=0.75,
+                        timing_mode="capture_time",
+                        buffer_mode="sliding_window",
+                        weight_mode="combined",
+                        residual_gating=residual_gating,
+                        residual_threshold_m=20.0,
+                        stale_time_s=0.75,
+                        min_uavs_for_estimate=2,
+                    )
+                    conditions.append(
+                        (
+                            f"false_obs_{false_observation_rate:g}_loss_{packet_loss:g}_speed_{speed:g}_{method}",
+                            sim,
+                            network,
+                            fusion,
+                            {
+                                "test": "test5_fusion_without_residual_gating_baseline",
+                                "experiment_id": "5A",
+                                "false_observation_rate": false_observation_rate,
+                                "packet_loss": packet_loss,
+                                "delay_s": delay_s,
+                                "target_speed_mps": speed,
+                                "uav_count": sim.num_uavs,
+                                "uav_rates_hz": ";".join(f"{rate:g}" for rate in sim.observation_rates_hz),
+                                "fusion_rate_hz": sim.fusion_rate_hz,
+                                "sliding_window_s": fusion.sliding_window_s,
+                                "residual_gating": residual_gating,
+                                "residual_threshold_m": fusion.residual_threshold_m,
+                                "method": method,
+                                "_seed_group": seed_group,
+                            },
+                        )
+                    )
+    return _run_conditions(
+        "test5a_false_detection_injection",
+        exp_config,
+        conditions,
+        [
+            "experiment",
+            "test",
+            "experiment_id",
+            "false_observation_rate",
+            "packet_loss",
+            "delay_s",
+            "target_speed_mps",
+            "uav_count",
+            "uav_rates_hz",
+            "fusion_rate_hz",
+            "sliding_window_s",
+            "residual_gating",
+            "residual_threshold_m",
+            "method",
+        ],
+        plot_test5a_false_detection_injection,
+    )
+
+
 def run_delay_sweep(exp_config: ExperimentConfig) -> pd.DataFrame:
     """Experiment 3: delay sweep comparing capture-time and arrival-time modes."""
     conditions = []
@@ -1005,6 +1093,7 @@ def run_all(exp_config: ExperimentConfig) -> pd.DataFrame:
         run_test3a_latest_only_packet_loss(exp_config),
         run_test3b_window_duration_sweep(exp_config),
         run_test4a_unweighted_bearing_fusion(exp_config),
+        run_test5a_false_detection_injection(exp_config),
         run_packet_loss_sweep(exp_config),
         run_delay_sweep(exp_config),
         run_window_sweep(exp_config),
@@ -1092,6 +1181,10 @@ EXPERIMENTS: dict[str, Callable[[ExperimentConfig], pd.DataFrame]] = {
     "test4a_unweighted_bearing_fusion": run_test4a_unweighted_bearing_fusion,
     "test4_unweighted": run_test4a_unweighted_bearing_fusion,
     "unweighted_bearing_fusion": run_test4a_unweighted_bearing_fusion,
+    "test5a_false_detection_injection": run_test5a_false_detection_injection,
+    "test5_false_detection": run_test5a_false_detection_injection,
+    "false_detection_injection": run_test5a_false_detection_injection,
+    "fusion_without_residual_gating": run_test5a_false_detection_injection,
     "delay": run_delay_sweep,
     "window": run_window_sweep,
     "sliding_window": run_window_sweep,

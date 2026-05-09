@@ -102,6 +102,25 @@ def plot_test4a_unweighted_bearing_fusion(summary: pd.DataFrame, output_dir: Pat
     line_plot(data, "packet_loss", "max_residual_m", output_dir, "test4a_max_residual_vs_packet_loss", "Packet loss probability", "Maximum residual (m)", "method_speed")
 
 
+def plot_test5a_false_detection_injection(summary: pd.DataFrame, output_dir: Path) -> None:
+    if summary.empty or "packet_loss" not in summary or "target_speed_mps" not in summary:
+        return
+    data = summary.copy()
+    data["method_loss_speed"] = (
+        data["method"].astype(str)
+        + ", loss="
+        + data["packet_loss"].astype(str)
+        + ", speed="
+        + data["target_speed_mps"].astype(str)
+        + " m/s"
+    )
+    line_plot(data, "false_observation_rate", "rmse_m", output_dir, "test5a_rmse_vs_false_observations", "False observation probability", "RMSE (m)", "method_loss_speed")
+    line_plot(data, "false_observation_rate", "p95_error_m", output_dir, "test5a_p95_error_vs_false_observations", "False observation probability", "95th percentile error (m)", "method_loss_speed")
+    line_plot(data, "false_observation_rate", "max_error_m", output_dir, "test5a_max_error_vs_false_observations", "False observation probability", "Maximum error (m)", "method_loss_speed")
+    line_plot(data, "false_observation_rate", "total_gated_rejected_observations", output_dir, "test5a_rejections_vs_false_observations", "False observation probability", "Rejected observation count", "method_loss_speed")
+    line_plot(data, "false_observation_rate", "estimate_availability_pct", output_dir, "test5a_availability_vs_false_observations", "False observation probability", "Availability (%)", "method_loss_speed")
+
+
 def plot_delay(summary: pd.DataFrame, output_dir: Path) -> None:
     line_plot(summary, "delay_s", "rmse_m", output_dir, "rmse_vs_delay", "Communication delay (s)", "RMSE (m)", "timing_mode")
     line_plot(summary, "delay_s", "mean_observation_age_s", output_dir, "capture_vs_arrival_age", "Communication delay (s)", "Mean observation age (s)", "timing_mode")
