@@ -1,0 +1,80 @@
+"""Matplotlib plotting helpers for experiment outputs."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
+
+def _save(fig: plt.Figure, output_dir: Path, name: str) -> None:
+    figure_dir = output_dir / "figures"
+    figure_dir.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(figure_dir / f"{name}.png", dpi=300)
+    fig.savefig(figure_dir / f"{name}.pdf")
+    plt.close(fig)
+
+
+def line_plot(
+    data: pd.DataFrame,
+    x: str,
+    y: str,
+    output_dir: Path,
+    name: str,
+    xlabel: str,
+    ylabel: str,
+    group: str | None = None,
+) -> None:
+    """Create a publication-style line plot with optional grouping."""
+    if data.empty or x not in data or y not in data:
+        return
+    fig, ax = plt.subplots(figsize=(6.4, 4.0))
+    if group and group in data:
+        for label, subset in data.groupby(group):
+            subset = subset.sort_values(x)
+            ax.plot(subset[x], subset[y], marker="o", linewidth=2.0, label=str(label))
+        ax.legend(frameon=False)
+    else:
+        subset = data.sort_values(x)
+        ax.plot(subset[x], subset[y], marker="o", linewidth=2.0)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.grid(True, alpha=0.3)
+    _save(fig, output_dir, name)
+
+
+def plot_packet_loss(summary: pd.DataFrame, output_dir: Path) -> None:
+    line_plot(summary, "packet_loss", "rmse_m", output_dir, "rmse_vs_packet_loss", "Packet loss probability", "RMSE (m)", "method")
+    line_plot(summary, "packet_loss", "estimate_availability_pct", output_dir, "availability_vs_packet_loss", "Packet loss probability", "Availability (%)", "method")
+
+
+def plot_delay(summary: pd.DataFrame, output_dir: Path) -> None:
+    line_plot(summary, "delay_s", "rmse_m", output_dir, "rmse_vs_delay", "Communication delay (s)", "RMSE (m)", "timing_mode")
+    line_plot(summary, "delay_s", "mean_observation_age_s", output_dir, "capture_vs_arrival_age", "Communication delay (s)", "Mean observation age (s)", "timing_mode")
+
+
+def plot_window(summary: pd.DataFrame, output_dir: Path) -> None:
+    line_plot(summary, "sliding_window_s", "rmse_m", output_dir, "rmse_vs_window", "Sliding window duration (s)", "RMSE (m)", "target_speed_mps")
+
+
+def plot_bandwidth(summary: pd.DataFrame, output_dir: Path) -> None:
+    line_plot(summary, "num_uavs", "kbit_per_s", output_dir, "bandwidth_vs_uavs", "Number of UAVs", "Payload bandwidth (kbit/s)", "label")
+
+
+def plot_trajectory(time_series: pd.DataFrame, output_dir: Path, name: str = "trajectory") -> None:
+    """Plot true and estimated target trajectories in the horizontal plane."""
+    if time_series.empty:
+        return
+    fig, ax = plt.subplots(figsize=(5.2, 5.0))
+    ax.plot(time_series["truth_x_m"], time_series["truth_y_m"], linewidth=2.0, label="Truth")
+    valid = time_series[time_series["valid_estimate"] == True]
+    if not valid.empty:
+        ax.plot(valid["estimate_x_m"], valid["estimate_y_m"], linewidth=1.5, label="Estimate")
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m)")
+    ax.axis("equal")
+    ax.grid(True, alpha=0.3)
+    ax.legend(frameon=False)
+    _save(fig, output_dir, name)
