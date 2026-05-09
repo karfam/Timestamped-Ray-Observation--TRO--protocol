@@ -92,6 +92,8 @@ def summarize_time_series(df: pd.DataFrame) -> dict[str, float]:
         "p95_error_m": p95_error,
         "max_error_m": max_error,
         "estimate_availability_pct": float(100.0 * len(valid) / len(df)),
+        "valid_estimate_count": int(len(valid)),
+        "invalid_fusion_cycles": int(len(df) - len(valid)),
         "mean_active_rays": float(df["active_rays"].mean()),
         "mean_contributing_uavs": float(df["contributing_uavs"].mean()),
         "mean_observation_age_s": float(df["mean_observation_age_s"].mean(skipna=True)),

@@ -64,13 +64,18 @@ class FusionNode:
 
     def fuse(self, current_time: float) -> EstimateResult:
         """Run one weighted multi-ray least-squares fusion cycle."""
-        active = self._active_observations(current_time)
+        active = self.get_active_observations(current_time, self.config.fusion_mode)
         contributing_uavs = len({obs.message.uav_id for obs in active})
         ages = [current_time - obs.message.capture_time for obs in active]
         mean_age = float(np.mean(ages)) if ages else float("nan")
         max_age = float(np.max(ages)) if ages else float("nan")
+        active_geometry_quality = geometry_quality([obs.message.ray_direction for obs in active])
 
-        if len(active) < 2 or contributing_uavs < self.config.min_uavs_for_estimate:
+        if (
+            len(active) < 2
+            or contributing_uavs < self.config.min_uavs_for_estimate
+            or not self._has_non_parallel_pair(active)
+        ):
             return EstimateResult(
                 current_time=current_time,
                 valid=False,
@@ -83,7 +88,7 @@ class FusionNode:
                 max_residual=float("nan"),
                 gated_observations=0,
                 condition_number=float("inf"),
-                geometry_quality=geometry_quality([obs.message.ray_direction for obs in active]),
+                geometry_quality=active_geometry_quality,
                 confidence=0.0,
             )
 
@@ -113,7 +118,7 @@ class FusionNode:
                 max_residual=float("nan"),
                 gated_observations=gated_count,
                 condition_number=condition_number,
-                geometry_quality=geometry_quality([obs.message.ray_direction for obs in active]),
+                geometry_quality=active_geometry_quality,
                 confidence=0.0,
             )
 
@@ -148,7 +153,30 @@ class FusionNode:
         direction_norm = float(np.linalg.norm(message.ray_direction))
         return abs(direction_norm - 1.0) < 1.0e-6
 
-    def _active_observations(self, current_time: float) -> list[BufferedObservation]:
+    def get_active_observations(self, current_time: float, mode: str | None = None) -> list[BufferedObservation]:
+        """Return arrived observations eligible for the requested fusion mode."""
+        selected_mode = mode or self.config.fusion_mode
+        self._prune_stale_buffer(current_time)
+
+        if selected_mode == "synchronized_bearing_fusion":
+            tolerance = self.config.sync_tolerance_s
+            return [
+                obs
+                for obs in self._buffer
+                if abs(obs.message.capture_time - current_time) <= tolerance + 1.0e-12
+            ]
+
+        if selected_mode == "tro_sliding_window_fusion":
+            cutoff = current_time - self.config.sliding_window_s
+            return [
+                obs
+                for obs in self._buffer
+                if cutoff - 1.0e-12 <= obs.message.capture_time <= current_time + 1.0e-12
+            ]
+
+        if selected_mode != "legacy_sliding_window":
+            raise ValueError(f"unknown fusion mode: {selected_mode}")
+
         cutoff = current_time - self.config.sliding_window_s
         if self.config.buffer_mode == "latest_only":
             active = [obs for obs in self._latest_by_uav.values() if obs.timing_key >= cutoff]
@@ -157,6 +185,27 @@ class FusionNode:
             return active
         self._buffer = [obs for obs in self._buffer if obs.timing_key >= cutoff]
         return list(self._buffer)
+
+    def _prune_stale_buffer(self, current_time: float) -> None:
+        stale_limit = self.config.stale_time_s or self.config.sliding_window_s
+        cutoff = current_time - max(stale_limit, self.config.sliding_window_s, self.config.sync_tolerance_s)
+        self._buffer = [obs for obs in self._buffer if obs.message.capture_time >= cutoff - 1.0e-12]
+        self._latest_by_uav = {
+            (obs.message.uav_id, obs.message.target_id): obs
+            for obs in self._latest_by_uav.values()
+            if obs.message.capture_time >= cutoff - 1.0e-12
+        }
+
+    def _has_non_parallel_pair(self, observations: list[BufferedObservation]) -> bool:
+        for index, first in enumerate(observations):
+            first_direction = normalize(first.message.ray_direction)
+            for second in observations[index + 1 :]:
+                if first.message.uav_id == second.message.uav_id:
+                    continue
+                second_direction = normalize(second.message.ray_direction)
+                if np.linalg.norm(np.cross(first_direction, second_direction)) > self.config.min_geometry_quality:
+                    return True
+        return False
 
     def _weight(self, message: TROMessage) -> float:
         mode = self.config.weight_mode

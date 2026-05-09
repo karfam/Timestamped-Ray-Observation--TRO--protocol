@@ -15,6 +15,7 @@ WeightMode = Literal["equal", "confidence", "uncertainty", "combined"]
 TimingMode = Literal["capture_time", "arrival_time"]
 BufferMode = Literal["sliding_window", "latest_only"]
 GeometryMode = Literal["circle", "square"]
+FusionMode = Literal["legacy_sliding_window", "synchronized_bearing_fusion", "tro_sliding_window_fusion"]
 
 
 @dataclass(slots=True)
@@ -26,6 +27,7 @@ class SimulationConfig:
     dt_s: float = 0.02
     fusion_rate_hz: float = 5.0
     observation_rates_hz: Sequence[float] = field(default_factory=lambda: [5.0, 5.0, 5.0, 5.0])
+    observation_start_offsets_s: Sequence[float] | None = None
     target_speed_mps: float = 0.0
     moving_target: bool = False
     target_initial_position_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -51,8 +53,12 @@ class SimulationConfig:
             raise ValueError("fusion_rate_hz must be positive")
         if len(self.observation_rates_hz) != self.num_uavs:
             raise ValueError("observation_rates_hz length must equal num_uavs")
+        if self.observation_start_offsets_s is not None and len(self.observation_start_offsets_s) != self.num_uavs:
+            raise ValueError("observation_start_offsets_s length must equal num_uavs")
         if any(rate <= 0 for rate in self.observation_rates_hz):
             raise ValueError("all observation rates must be positive")
+        if self.observation_start_offsets_s is not None and any(offset < 0 for offset in self.observation_start_offsets_s):
+            raise ValueError("observation_start_offsets_s values must be non-negative")
         if self.angular_noise_std_deg < 0 or self.position_noise_std_m < 0:
             raise ValueError("noise values must be non-negative")
         if not 0.0 <= self.outlier_rate <= 1.0:
@@ -89,6 +95,8 @@ class FusionConfig:
     """Fusion-node configuration."""
 
     sliding_window_s: float = 1.0
+    sync_tolerance_s: float = 0.05
+    fusion_mode: FusionMode = "legacy_sliding_window"
     timing_mode: TimingMode = "capture_time"
     buffer_mode: BufferMode = "sliding_window"
     weight_mode: WeightMode = "combined"
@@ -99,17 +107,22 @@ class FusionConfig:
     expected_msg_type: int = 1
     stale_time_s: float | None = None
     min_uavs_for_estimate: int = 2
+    min_geometry_quality: float = 1.0e-3
     weight_epsilon: float = 1.0e-8
 
     def validate(self) -> None:
         if self.sliding_window_s <= 0:
             raise ValueError("sliding_window_s must be positive")
+        if self.sync_tolerance_s < 0:
+            raise ValueError("sync_tolerance_s must be non-negative")
         if self.residual_threshold_m <= 0:
             raise ValueError("residual_threshold_m must be positive")
         if self.max_condition_number <= 0:
             raise ValueError("max_condition_number must be positive")
         if self.min_uavs_for_estimate < 2:
             raise ValueError("min_uavs_for_estimate must be at least 2")
+        if self.min_geometry_quality < 0:
+            raise ValueError("min_geometry_quality must be non-negative")
 
 
 @dataclass(slots=True)
@@ -120,7 +133,10 @@ class ExperimentConfig:
     output_dir: Path = ROOT_OUTPUT_DIR
     make_plots: bool = True
     seed: int = 7
+    duration_s: float | None = None
 
     def validate(self) -> None:
         if self.monte_carlo_runs < 1:
             raise ValueError("monte_carlo_runs must be at least 1")
+        if self.duration_s is not None and self.duration_s <= 0:
+            raise ValueError("duration_s must be positive when provided")

@@ -13,7 +13,7 @@ from .config import ExperimentConfig, FusionConfig, NetworkConfig, SimulationCon
 from .fusion_node import FusionNode
 from .metrics import MetricsRecorder, aggregate_runs, summarize_time_series
 from .network_model import NetworkModel
-from .plots import plot_bandwidth, plot_delay, plot_packet_loss, plot_trajectory, plot_window
+from .plots import plot_bandwidth, plot_delay, plot_packet_loss, plot_sync_vs_tro, plot_trajectory, plot_window
 from .scenario import Scenario
 from .tro_message import payload_bandwidth
 from .utils import ensure_output_dirs, make_rng
@@ -38,7 +38,10 @@ def run_single_simulation(
     fusion = FusionNode(fusion_config)
     recorder = MetricsRecorder()
 
-    next_observation_times = np.zeros(sim_config.num_uavs, dtype=float)
+    if sim_config.observation_start_offsets_s is None:
+        next_observation_times = np.zeros(sim_config.num_uavs, dtype=float)
+    else:
+        next_observation_times = np.asarray(sim_config.observation_start_offsets_s, dtype=float)
     observation_periods = np.array([1.0 / rate for rate in sim_config.observation_rates_hz], dtype=float)
     sequences = np.zeros(sim_config.num_uavs, dtype=int)
     next_fusion_time = 0.0
@@ -200,6 +203,263 @@ def run_smoke(exp_config: ExperimentConfig) -> pd.DataFrame:
     return _run_conditions("smoke", short_config, [("smoke", sim, network, fusion, {"condition": "smoke", "method": "tro"})], ["experiment", "condition", "method"], None)
 
 
+def run_synchronized_vs_tro_evaluation(exp_config: ExperimentConfig) -> pd.DataFrame:
+    """Evaluate synchronized bearing fusion against TRO sliding-window fusion."""
+    exp_config.validate()
+    output_dir = _sync_vs_tro_output_dir(exp_config.output_dir)
+    ensure_output_dirs(output_dir)
+
+    conditions = _sync_vs_tro_conditions(exp_config.duration_s or 60.0)
+    methods = ["synchronized_bearing_fusion", "tro_sliding_window_fusion"]
+    run_rows: list[dict[str, object]] = []
+    aggregate_inputs: list[dict[str, object]] = []
+    representative_series: dict[tuple[str, str, str], pd.DataFrame] = {}
+
+    total = len(conditions) * len(methods) * exp_config.monte_carlo_runs
+    completed = 0
+    for condition_index, condition in enumerate(conditions):
+        for method in methods:
+            fusion = FusionConfig(
+                fusion_mode=method,
+                sliding_window_s=0.5,
+                sync_tolerance_s=0.05,
+                timing_mode="capture_time",
+                buffer_mode="sliding_window",
+                stale_time_s=0.5,
+                min_uavs_for_estimate=2,
+            )
+            for run in range(exp_config.monte_carlo_runs):
+                seed = exp_config.seed + condition_index * 10_000 + methods.index(method) * 1_000 + run
+                completed += 1
+                print(
+                    f"[sync_vs_tro] run {completed}/{total}: "
+                    f"{condition['experiment_name']} / {condition['condition_name']} / {method}, seed={seed}"
+                )
+                time_series, summary = run_single_simulation(
+                    condition["simulation"],
+                    condition["network"],
+                    fusion,
+                    seed=seed,
+                )
+                row = _sync_vs_tro_summary_row(condition, method, run, seed, summary, exp_config.monte_carlo_runs)
+                run_rows.append(row)
+                aggregate_inputs.append(row)
+
+                series_key = (str(condition["experiment_name"]), str(condition["condition_name"]), method)
+                if run == 0 and series_key not in representative_series:
+                    ts = time_series.copy()
+                    ts.insert(0, "experiment_name", condition["experiment_name"])
+                    ts.insert(1, "condition_name", condition["condition_name"])
+                    ts.insert(2, "method", method)
+                    representative_series[series_key] = ts
+
+    group_columns = [
+        "experiment_name",
+        "condition_name",
+        "method",
+        "target_speed",
+        "uav_rates",
+        "fusion_rate",
+        "packet_loss",
+        "delay",
+        "bearing_noise_deg",
+        "position_noise_m",
+        "sync_tolerance_s",
+        "sliding_window_s",
+        "monte_carlo_runs",
+    ]
+    summary = aggregate_runs(aggregate_inputs, group_columns)
+    summary = _order_sync_vs_tro_columns(summary)
+    per_run = pd.DataFrame(run_rows)
+
+    summary_path = output_dir / "summary.csv"
+    per_run.to_csv(output_dir / "per_run_summary.csv", index=False)
+    summary.to_csv(summary_path, index=False)
+    for (experiment_name, condition_name, method), frame in representative_series.items():
+        filename = f"timeseries_{_safe_name(experiment_name)}_{_safe_name(condition_name)}_{_safe_name(method)}.csv"
+        frame.to_csv(output_dir / filename, index=False)
+
+    if exp_config.make_plots:
+        plot_sync_vs_tro(summary, output_dir)
+
+    print(f"[sync_vs_tro] summary: {summary_path.resolve()}")
+    print(f"[sync_vs_tro] figures: {(output_dir / 'figures').resolve()}")
+    return summary
+
+
+def _sync_vs_tro_conditions(duration_s: float) -> list[dict[str, object]]:
+    conditions: list[dict[str, object]] = []
+
+    def add(
+        experiment_name: str,
+        condition_name: str,
+        target_speed: float,
+        rates: list[float],
+        packet_loss: float,
+        delay: float,
+        offsets: list[float] | None = None,
+    ) -> None:
+        simulation = SimulationConfig(
+            num_uavs=4,
+            duration_s=duration_s,
+            target_speed_mps=target_speed,
+            moving_target=target_speed > 0.0,
+            observation_rates_hz=rates,
+            observation_start_offsets_s=offsets,
+            fusion_rate_hz=5.0,
+            angular_noise_std_deg=0.5,
+            position_noise_std_m=1.0,
+        )
+        network = NetworkConfig(packet_loss=packet_loss, delay_mode="fixed", fixed_delay_s=delay)
+        conditions.append(
+            {
+                "experiment_name": experiment_name,
+                "condition_name": condition_name,
+                "target_speed": target_speed,
+                "uav_rates": ";".join(f"{rate:g}" for rate in rates),
+                "fusion_rate": 5.0,
+                "packet_loss": packet_loss,
+                "delay": delay,
+                "bearing_noise_deg": 0.5,
+                "position_noise_m": 1.0,
+                "simulation": simulation,
+                "network": network,
+            }
+        )
+
+    add("1A_ideal_synchronized", "ideal_static_5hz", 0.0, [5.0, 5.0, 5.0, 5.0], 0.0, 0.0)
+
+    for speed in [0.0, 2.0]:
+        add(
+            "1B_heterogeneous_update_rates",
+            f"heterogeneous_speed_{speed:g}",
+            speed,
+            [10.0, 5.0, 2.0, 1.0],
+            0.0,
+            0.0,
+            [0.0, 0.08, 0.17, 0.31],
+        )
+
+    for delay in [0.0, 0.05, 0.10, 0.25, 0.50]:
+        add(
+            "1C_delay_sweep",
+            f"delay_{delay:g}s",
+            2.0,
+            [5.0, 5.0, 5.0, 5.0],
+            0.0,
+            delay,
+        )
+
+    for speed in [0.0, 2.0]:
+        for packet_loss in [0.0, 0.05, 0.10, 0.20, 0.30, 0.50]:
+            add(
+                "1D_packet_loss_sweep",
+                f"loss_{packet_loss:g}_speed_{speed:g}",
+                speed,
+                [5.0, 5.0, 5.0, 5.0],
+                packet_loss,
+                0.0,
+            )
+
+    return conditions
+
+
+def _sync_vs_tro_summary_row(
+    condition: dict[str, object],
+    method: str,
+    run: int,
+    seed: int,
+    summary: dict[str, object],
+    monte_carlo_runs: int,
+) -> dict[str, object]:
+    return {
+        "experiment_name": condition["experiment_name"],
+        "condition_name": condition["condition_name"],
+        "method": method,
+        "run": run,
+        "seed": seed,
+        "target_speed": condition["target_speed"],
+        "uav_rates": condition["uav_rates"],
+        "fusion_rate": condition["fusion_rate"],
+        "packet_loss": condition["packet_loss"],
+        "delay": condition["delay"],
+        "bearing_noise_deg": condition["bearing_noise_deg"],
+        "position_noise_m": condition["position_noise_m"],
+        "sync_tolerance_s": 0.05,
+        "sliding_window_s": 0.5,
+        "rmse_m": summary.get("rmse_m", float("nan")),
+        "mean_error_m": summary.get("mean_error_m", float("nan")),
+        "median_error_m": summary.get("median_error_m", float("nan")),
+        "p95_error_m": summary.get("p95_error_m", float("nan")),
+        "max_error_m": summary.get("max_error_m", float("nan")),
+        "availability_percent": summary.get("estimate_availability_pct", 0.0),
+        "valid_estimates": summary.get("valid_estimate_count", 0),
+        "invalid_fusion_cycles": summary.get("invalid_fusion_cycles", 0),
+        "mean_active_rays": summary.get("mean_active_rays", 0.0),
+        "mean_contributing_uavs": summary.get("mean_contributing_uavs", 0.0),
+        "mean_observation_age_s": summary.get("mean_observation_age_s", float("nan")),
+        "max_observation_age_s": summary.get("max_observation_age_s", float("nan")),
+        "mean_residual_m": summary.get("mean_residual_m", float("nan")),
+        "max_residual_m": summary.get("max_residual_m", float("nan")),
+        "mean_condition_number": summary.get("mean_condition_number", float("nan")),
+        "packet_loss_count": summary.get("final_packet_loss_count", 0),
+        "stale_rejected_count": summary.get("final_stale_rejected_count", 0),
+        "duplicate_count": summary.get("final_duplicate_count", 0),
+        "out_of_order_count": summary.get("final_out_of_order_count", 0),
+        "monte_carlo_runs": monte_carlo_runs,
+    }
+
+
+def _order_sync_vs_tro_columns(summary: pd.DataFrame) -> pd.DataFrame:
+    ordered = [
+        "experiment_name",
+        "condition_name",
+        "method",
+        "target_speed",
+        "uav_rates",
+        "fusion_rate",
+        "packet_loss",
+        "delay",
+        "bearing_noise_deg",
+        "position_noise_m",
+        "sync_tolerance_s",
+        "sliding_window_s",
+        "rmse_m",
+        "mean_error_m",
+        "median_error_m",
+        "p95_error_m",
+        "max_error_m",
+        "availability_percent",
+        "valid_estimates",
+        "invalid_fusion_cycles",
+        "mean_active_rays",
+        "mean_contributing_uavs",
+        "mean_observation_age_s",
+        "max_observation_age_s",
+        "mean_residual_m",
+        "max_residual_m",
+        "mean_condition_number",
+        "packet_loss_count",
+        "stale_rejected_count",
+        "duplicate_count",
+        "out_of_order_count",
+        "monte_carlo_runs",
+    ]
+    existing = [column for column in ordered if column in summary.columns]
+    remaining = [column for column in summary.columns if column not in existing]
+    return summary[existing + remaining]
+
+
+def _safe_name(value: str) -> str:
+    return "".join(character if character.isalnum() else "_" for character in value).strip("_")
+
+
+def _sync_vs_tro_output_dir(output_dir: Path) -> Path:
+    if output_dir.name == "synchronized_vs_tro":
+        return output_dir
+    return output_dir / "synchronized_vs_tro"
+
+
 def run_validation_checks() -> None:
     """Run simple internal consistency checks requested for the simulator."""
     ideal_sim = SimulationConfig(duration_s=3.0, angular_noise_std_deg=0.0, position_noise_std_m=0.0)
@@ -324,5 +584,7 @@ EXPERIMENTS: dict[str, Callable[[ExperimentConfig], pd.DataFrame]] = {
     "outlier_rejection": run_outlier_rejection,
     "bandwidth": run_bandwidth_calculation,
     "smoke": run_smoke,
+    "sync_vs_tro": run_synchronized_vs_tro_evaluation,
+    "synchronized_vs_tro": run_synchronized_vs_tro_evaluation,
     "all": run_all,
 }

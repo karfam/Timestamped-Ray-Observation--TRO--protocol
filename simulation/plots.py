@@ -78,3 +78,113 @@ def plot_trajectory(time_series: pd.DataFrame, output_dir: Path, name: str = "tr
     ax.grid(True, alpha=0.3)
     ax.legend(frameon=False)
     _save(fig, output_dir, name)
+
+
+def grouped_bar_plot(
+    data: pd.DataFrame,
+    category: str,
+    value: str,
+    group: str,
+    output_dir: Path,
+    name: str,
+    xlabel: str,
+    ylabel: str,
+) -> None:
+    """Create a grouped bar chart."""
+    if data.empty or category not in data or value not in data or group not in data:
+        return
+    pivot = data.pivot_table(index=category, columns=group, values=value, aggfunc="mean")
+    if pivot.empty:
+        return
+    fig, ax = plt.subplots(figsize=(6.4, 4.0))
+    pivot.plot(kind="bar", ax=ax, width=0.75)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.grid(True, axis="y", alpha=0.3)
+    ax.legend(frameon=False)
+    fig.autofmt_xdate(rotation=0)
+    _save(fig, output_dir, name)
+
+
+def plot_sync_vs_tro(summary: pd.DataFrame, output_dir: Path) -> None:
+    """Generate required synchronized bearing fusion versus TRO comparison plots."""
+    if summary.empty:
+        return
+
+    ideal = summary[summary["experiment_name"] == "1A_ideal_synchronized"]
+    grouped_bar_plot(
+        ideal,
+        "condition_name",
+        "rmse_m",
+        "method",
+        output_dir,
+        "ideal_rmse_comparison",
+        "Ideal synchronized condition",
+        "RMSE (m)",
+    )
+    grouped_bar_plot(
+        ideal,
+        "condition_name",
+        "availability_percent",
+        "method",
+        output_dir,
+        "ideal_availability_comparison",
+        "Ideal synchronized condition",
+        "Availability (%)",
+    )
+
+    packet_loss = summary[summary["experiment_name"] == "1D_packet_loss_sweep"]
+    line_plot(
+        packet_loss,
+        "packet_loss",
+        "availability_percent",
+        output_dir,
+        "availability_vs_packet_loss",
+        "Packet loss probability",
+        "Availability (%)",
+        "method",
+    )
+    line_plot(
+        packet_loss,
+        "packet_loss",
+        "rmse_m",
+        output_dir,
+        "rmse_vs_packet_loss",
+        "Packet loss probability",
+        "RMSE (m)",
+        "method",
+    )
+
+    delay = summary[summary["experiment_name"] == "1C_delay_sweep"]
+    line_plot(
+        delay,
+        "delay",
+        "availability_percent",
+        output_dir,
+        "availability_vs_communication_delay",
+        "Communication delay (s)",
+        "Availability (%)",
+        "method",
+    )
+    line_plot(
+        delay,
+        "delay",
+        "rmse_m",
+        output_dir,
+        "rmse_vs_communication_delay",
+        "Communication delay (s)",
+        "RMSE (m)",
+        "method",
+    )
+
+    heterogeneous = summary[summary["experiment_name"] == "1B_heterogeneous_update_rates"]
+    grouped_bar_plot(
+        heterogeneous,
+        "condition_name",
+        "availability_percent",
+        "method",
+        output_dir,
+        "heterogeneous_availability_comparison",
+        "Heterogeneous-rate condition",
+        "Availability (%)",
+    )
