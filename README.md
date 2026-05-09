@@ -31,6 +31,8 @@ python -m simulation.main --experiment test1a_packet_loss
 python -m simulation.main --experiment test1b_heterogeneous_rates
 python -m simulation.main --experiment test2a_delay_sweep
 python -m simulation.main --experiment test2b_jitter_sweep
+python -m simulation.main --experiment test3a_latest_only_packet_loss
+python -m simulation.main --experiment test3b_window_duration_sweep
 python -m simulation.main --experiment delay
 python -m simulation.main --experiment packet_loss
 python -m simulation.main --experiment bandwidth
@@ -63,6 +65,8 @@ python -m simulation.main --experiment all --output-dir outputs_paper
 - `test1b_heterogeneous_rates`: Test 1B heterogeneous UAV update rates `[10, 5, 2, 1]` Hz with 0% to 10% packet loss, comparing strict synchronized fusion with TRO sliding-window fusion.
 - `test2a_delay_sweep`: Test 2A arrival-time fusion baseline, sweeping fixed delay from 0 to 1000 ms with 0% to 10% packet loss for a moving target.
 - `test2b_jitter_sweep`: Test 2B arrival-time fusion baseline, sweeping delay jitter from 0 to 500 ms around 250 ms mean delay with 5% packet loss.
+- `test3a_latest_only_packet_loss`: Test 3A latest-only fusion baseline with heterogeneous UAV update rates `[10, 5, 2, 1]` Hz, packet loss from 0% to 50%, and comparison against TRO sliding-window fusion.
+- `test3b_window_duration_sweep`: Test 3B TRO sliding-window duration sweep from 0.1 s to 2.0 s with 20% packet loss and target speeds 0, 5, 10, and 20 m/s.
 - `packet_loss`: packet loss sweep from 0 to 50%, comparing TRO sliding-window fusion with a latest-only baseline.
 - `delay`: fixed delay sweep comparing capture-time buffering with an arrival-time baseline for a moving target.
 - `window`: sliding-window duration sweep for target speeds 0, 2, and 10 m/s.

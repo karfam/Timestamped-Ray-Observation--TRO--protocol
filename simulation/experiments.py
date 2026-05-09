@@ -22,6 +22,8 @@ from .plots import (
     plot_test1b_heterogeneous_rates,
     plot_test2a_delay_sweep,
     plot_test2b_jitter_sweep,
+    plot_test3a_latest_only_packet_loss,
+    plot_test3b_window_duration_sweep,
     plot_trajectory,
     plot_window,
 )
@@ -321,6 +323,135 @@ def run_test2b_jitter_sweep(exp_config: ExperimentConfig) -> pd.DataFrame:
     )
 
 
+def run_test3a_latest_only_packet_loss(exp_config: ExperimentConfig) -> pd.DataFrame:
+    """Test 3A: latest-only fusion baseline under packet loss and sparse updates."""
+    conditions = []
+    losses = [0.0, 0.10, 0.20, 0.30, 0.50]
+    rates = [10.0, 5.0, 2.0, 1.0]
+    methods = ["latest_only_fusion", "tro_sliding_window_fusion"]
+    for packet_loss in losses:
+        for method in methods:
+            sim = SimulationConfig(
+                num_uavs=4,
+                duration_s=exp_config.duration_s or 60.0,
+                fusion_rate_hz=5.0,
+                observation_rates_hz=rates,
+                observation_start_offsets_s=[0.0, 0.08, 0.17, 0.31],
+                moving_target=True,
+                target_speed_mps=2.0,
+                angular_noise_std_deg=0.5,
+                position_noise_std_m=1.0,
+            )
+            network = NetworkConfig(packet_loss=packet_loss, delay_mode="fixed", fixed_delay_s=0.0)
+            fusion = _latest_only_baseline_fusion_config(method, window_s=1.0)
+            conditions.append(
+                (
+                    f"loss_{packet_loss:g}_{method}",
+                    sim,
+                    network,
+                    fusion,
+                    {
+                        "test": "test3_latest_only_fusion_baseline",
+                        "experiment_id": "3A",
+                        "packet_loss": packet_loss,
+                        "target_speed_mps": sim.target_speed_mps,
+                        "uav_count": sim.num_uavs,
+                        "uav_rates_hz": ";".join(f"{rate:g}" for rate in rates),
+                        "fusion_rate_hz": sim.fusion_rate_hz,
+                        "sliding_window_s": fusion.sliding_window_s,
+                        "method": method,
+                    },
+                )
+            )
+    return _run_conditions(
+        "test3a_latest_only_packet_loss",
+        exp_config,
+        conditions,
+        [
+            "experiment",
+            "test",
+            "experiment_id",
+            "packet_loss",
+            "target_speed_mps",
+            "uav_count",
+            "uav_rates_hz",
+            "fusion_rate_hz",
+            "sliding_window_s",
+            "method",
+        ],
+        plot_test3a_latest_only_packet_loss,
+    )
+
+
+def run_test3b_window_duration_sweep(exp_config: ExperimentConfig) -> pd.DataFrame:
+    """Test 3B: sliding-window duration sweep under packet loss and moving targets."""
+    conditions = []
+    windows = [0.1, 0.25, 0.5, 1.0, 2.0]
+    speeds = [0.0, 5.0, 10.0, 20.0]
+    rates = [10.0, 5.0, 2.0, 1.0]
+    packet_loss = 0.20
+    for speed_index, speed in enumerate(speeds):
+        for window_index, window_s in enumerate(windows):
+            sim = SimulationConfig(
+                num_uavs=4,
+                duration_s=exp_config.duration_s or 60.0,
+                fusion_rate_hz=5.0,
+                observation_rates_hz=rates,
+                observation_start_offsets_s=[0.0, 0.08, 0.17, 0.31],
+                moving_target=speed > 0.0,
+                target_speed_mps=speed,
+                angular_noise_std_deg=0.5,
+                position_noise_std_m=1.0,
+            )
+            network = NetworkConfig(packet_loss=packet_loss, delay_mode="fixed", fixed_delay_s=0.0)
+            fusion = FusionConfig(
+                fusion_mode="tro_sliding_window_fusion",
+                sliding_window_s=window_s,
+                timing_mode="capture_time",
+                buffer_mode="sliding_window",
+                stale_time_s=window_s,
+                min_uavs_for_estimate=2,
+            )
+            conditions.append(
+                (
+                    f"window_{window_s:g}_speed_{speed:g}",
+                    sim,
+                    network,
+                    fusion,
+                    {
+                        "test": "test3_latest_only_fusion_baseline",
+                        "experiment_id": "3B",
+                        "packet_loss": packet_loss,
+                        "target_speed_mps": speed,
+                        "uav_count": sim.num_uavs,
+                        "uav_rates_hz": ";".join(f"{rate:g}" for rate in rates),
+                        "fusion_rate_hz": sim.fusion_rate_hz,
+                        "sliding_window_s": window_s,
+                        "method": "tro_sliding_window_fusion",
+                        "_seed_group": speed_index * len(windows) + window_index,
+                    },
+                )
+            )
+    return _run_conditions(
+        "test3b_window_duration_sweep",
+        exp_config,
+        conditions,
+        [
+            "experiment",
+            "test",
+            "experiment_id",
+            "packet_loss",
+            "target_speed_mps",
+            "uav_count",
+            "uav_rates_hz",
+            "fusion_rate_hz",
+            "sliding_window_s",
+            "method",
+        ],
+        plot_test3b_window_duration_sweep,
+    )
+
+
 def run_delay_sweep(exp_config: ExperimentConfig) -> pd.DataFrame:
     """Experiment 3: delay sweep comparing capture-time and arrival-time modes."""
     conditions = []
@@ -606,6 +737,29 @@ def _timestamp_baseline_fusion_config(method: str) -> FusionConfig:
     raise ValueError(f"unknown timestamp baseline method: {method}")
 
 
+def _latest_only_baseline_fusion_config(method: str, window_s: float) -> FusionConfig:
+    if method == "latest_only_fusion":
+        latest_horizon_s = 0.2
+        return FusionConfig(
+            fusion_mode="tro_sliding_window_fusion",
+            sliding_window_s=latest_horizon_s,
+            timing_mode="capture_time",
+            buffer_mode="latest_only",
+            stale_time_s=latest_horizon_s,
+            min_uavs_for_estimate=2,
+        )
+    if method == "tro_sliding_window_fusion":
+        return FusionConfig(
+            fusion_mode="tro_sliding_window_fusion",
+            sliding_window_s=window_s,
+            timing_mode="capture_time",
+            buffer_mode="sliding_window",
+            stale_time_s=window_s,
+            min_uavs_for_estimate=2,
+        )
+    raise ValueError(f"unknown latest-only baseline method: {method}")
+
+
 def _sync_vs_tro_summary_row(
     condition: dict[str, object],
     method: str,
@@ -758,6 +912,8 @@ def run_all(exp_config: ExperimentConfig) -> pd.DataFrame:
         run_test1b_heterogeneous_rates(exp_config),
         run_test2a_delay_sweep(exp_config),
         run_test2b_jitter_sweep(exp_config),
+        run_test3a_latest_only_packet_loss(exp_config),
+        run_test3b_window_duration_sweep(exp_config),
         run_packet_loss_sweep(exp_config),
         run_delay_sweep(exp_config),
         run_window_sweep(exp_config),
@@ -836,6 +992,12 @@ EXPERIMENTS: dict[str, Callable[[ExperimentConfig], pd.DataFrame]] = {
     "test2b_jitter_sweep": run_test2b_jitter_sweep,
     "arrival_jitter_sweep": run_test2b_jitter_sweep,
     "timestamp_jitter_sweep": run_test2b_jitter_sweep,
+    "test3a_latest_only_packet_loss": run_test3a_latest_only_packet_loss,
+    "latest_only_packet_loss": run_test3a_latest_only_packet_loss,
+    "test3_latest_only": run_test3a_latest_only_packet_loss,
+    "test3b_window_duration_sweep": run_test3b_window_duration_sweep,
+    "latest_only_window_sweep": run_test3b_window_duration_sweep,
+    "test3_window_sweep": run_test3b_window_duration_sweep,
     "delay": run_delay_sweep,
     "window": run_window_sweep,
     "sliding_window": run_window_sweep,

@@ -76,6 +76,20 @@ def plot_test2b_jitter_sweep(summary: pd.DataFrame, output_dir: Path) -> None:
     line_plot(summary, "jitter_s", "estimate_availability_pct", output_dir, "test2b_availability_vs_jitter", "Delay jitter std. dev. (s)", "Availability (%)", "method")
 
 
+def plot_test3a_latest_only_packet_loss(summary: pd.DataFrame, output_dir: Path) -> None:
+    line_plot(summary, "packet_loss", "estimate_availability_pct", output_dir, "test3a_availability_vs_packet_loss", "Packet loss probability", "Availability (%)", "method")
+    line_plot(summary, "packet_loss", "mean_active_rays", output_dir, "test3a_rays_vs_packet_loss", "Packet loss probability", "Mean usable rays", "method")
+    line_plot(summary, "packet_loss", "rmse_m", output_dir, "test3a_rmse_vs_packet_loss", "Packet loss probability", "RMSE (m)", "method")
+    line_plot(summary, "packet_loss", "mean_observation_age_s", output_dir, "test3a_age_vs_packet_loss", "Packet loss probability", "Mean observation age (s)", "method")
+
+
+def plot_test3b_window_duration_sweep(summary: pd.DataFrame, output_dir: Path) -> None:
+    line_plot(summary, "sliding_window_s", "estimate_availability_pct", output_dir, "test3b_availability_vs_window", "Sliding window duration (s)", "Availability (%)", "target_speed_mps")
+    line_plot(summary, "sliding_window_s", "mean_active_rays", output_dir, "test3b_rays_vs_window", "Sliding window duration (s)", "Mean usable rays", "target_speed_mps")
+    line_plot(summary, "sliding_window_s", "rmse_m", output_dir, "test3b_rmse_vs_window", "Sliding window duration (s)", "RMSE (m)", "target_speed_mps")
+    line_plot(summary, "sliding_window_s", "mean_observation_age_s", output_dir, "test3b_age_vs_window", "Sliding window duration (s)", "Mean observation age (s)", "target_speed_mps")
+
+
 def plot_delay(summary: pd.DataFrame, output_dir: Path) -> None:
     line_plot(summary, "delay_s", "rmse_m", output_dir, "rmse_vs_delay", "Communication delay (s)", "RMSE (m)", "timing_mode")
     line_plot(summary, "delay_s", "mean_observation_age_s", output_dir, "capture_vs_arrival_age", "Communication delay (s)", "Mean observation age (s)", "timing_mode")
