@@ -13,7 +13,7 @@ from .config import ExperimentConfig, FusionConfig, NetworkConfig, SimulationCon
 from .fusion_node import FusionNode
 from .metrics import MetricsRecorder, aggregate_runs, summarize_time_series
 from .network_model import NetworkModel
-from .plots import plot_bandwidth, plot_delay, plot_packet_loss, plot_sync_vs_tro, plot_trajectory, plot_window
+from .plots import plot_bandwidth, plot_delay, plot_packet_loss, plot_sync_vs_tro, plot_test1a_packet_loss, plot_trajectory, plot_window
 from .scenario import Scenario
 from .tro_message import payload_bandwidth
 from .utils import ensure_output_dirs, make_rng
@@ -118,6 +118,51 @@ def run_packet_loss_sweep(exp_config: ExperimentConfig) -> pd.DataFrame:
     return _run_conditions("packet_loss", exp_config, conditions, ["experiment", "packet_loss", "method"], plot_packet_loss)
 
 
+def run_test1a_packet_loss_sweep(exp_config: ExperimentConfig) -> pd.DataFrame:
+    """Test 1A: packet loss sweep for strict synchronized bearing fusion versus TRO."""
+    conditions = []
+    losses = [0.0, 0.05, 0.10, 0.20, 0.30, 0.50]
+    methods = ["synchronized_bearing_fusion", "tro_sliding_window_fusion"]
+    for packet_loss in losses:
+        for method in methods:
+            sim = SimulationConfig(
+                num_uavs=4,
+                duration_s=exp_config.duration_s or 60.0,
+                fusion_rate_hz=5.0,
+                observation_rates_hz=[5.0, 5.0, 5.0, 5.0],
+                moving_target=False,
+                target_speed_mps=0.0,
+                angular_noise_std_deg=0.5,
+                position_noise_std_m=1.0,
+            )
+            network = NetworkConfig(packet_loss=packet_loss, delay_mode="fixed", fixed_delay_s=0.0)
+            fusion = _sync_baseline_fusion_config(method, sim.num_uavs)
+            conditions.append(
+                (
+                    f"loss_{packet_loss:g}_{method}",
+                    sim,
+                    network,
+                    fusion,
+                    {
+                        "test": "test1_synchronized_bearing_fusion_baseline",
+                        "experiment_id": "1A",
+                        "packet_loss": packet_loss,
+                        "delay_s": 0.0,
+                        "target_speed_mps": 0.0,
+                        "uav_count": sim.num_uavs,
+                        "method": method,
+                    },
+                )
+            )
+    return _run_conditions(
+        "test1a_packet_loss",
+        exp_config,
+        conditions,
+        ["experiment", "test", "experiment_id", "packet_loss", "delay_s", "target_speed_mps", "uav_count", "method"],
+        plot_test1a_packet_loss,
+    )
+
+
 def run_delay_sweep(exp_config: ExperimentConfig) -> pd.DataFrame:
     """Experiment 3: delay sweep comparing capture-time and arrival-time modes."""
     conditions = []
@@ -219,15 +264,7 @@ def run_synchronized_vs_tro_evaluation(exp_config: ExperimentConfig) -> pd.DataF
     completed = 0
     for condition_index, condition in enumerate(conditions):
         for method in methods:
-            fusion = FusionConfig(
-                fusion_mode=method,
-                sliding_window_s=0.5,
-                sync_tolerance_s=0.05,
-                timing_mode="capture_time",
-                buffer_mode="sliding_window",
-                stale_time_s=0.5,
-                min_uavs_for_estimate=2,
-            )
+            fusion = _sync_baseline_fusion_config(method, int(condition["simulation"].num_uavs))
             for run in range(exp_config.monte_carlo_runs):
                 seed = exp_config.seed + condition_index * 10_000 + methods.index(method) * 1_000 + run
                 completed += 1
@@ -362,6 +399,18 @@ def _sync_vs_tro_conditions(duration_s: float) -> list[dict[str, object]]:
             )
 
     return conditions
+
+
+def _sync_baseline_fusion_config(method: str, num_uavs: int) -> FusionConfig:
+    return FusionConfig(
+        fusion_mode=method,
+        sliding_window_s=0.5,
+        sync_tolerance_s=0.05,
+        timing_mode="capture_time",
+        buffer_mode="sliding_window",
+        stale_time_s=0.5,
+        min_uavs_for_estimate=num_uavs if method == "synchronized_bearing_fusion" else 2,
+    )
 
 
 def _sync_vs_tro_summary_row(
@@ -512,6 +561,7 @@ def run_all(exp_config: ExperimentConfig) -> pd.DataFrame:
     """Run all paper-oriented experiments and write a consolidated summary."""
     frames = [
         run_ideal_baseline(exp_config),
+        run_test1a_packet_loss_sweep(exp_config),
         run_packet_loss_sweep(exp_config),
         run_delay_sweep(exp_config),
         run_window_sweep(exp_config),
@@ -575,6 +625,9 @@ EXPERIMENTS: dict[str, Callable[[ExperimentConfig], pd.DataFrame]] = {
     "ideal": run_ideal_baseline,
     "ideal_baseline": run_ideal_baseline,
     "packet_loss": run_packet_loss_sweep,
+    "test1a_packet_loss": run_test1a_packet_loss_sweep,
+    "sync_packet_loss": run_test1a_packet_loss_sweep,
+    "synchronized_packet_loss": run_test1a_packet_loss_sweep,
     "delay": run_delay_sweep,
     "window": run_window_sweep,
     "sliding_window": run_window_sweep,

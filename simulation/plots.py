@@ -50,6 +50,11 @@ def plot_packet_loss(summary: pd.DataFrame, output_dir: Path) -> None:
     line_plot(summary, "packet_loss", "estimate_availability_pct", output_dir, "availability_vs_packet_loss", "Packet loss probability", "Availability (%)", "method")
 
 
+def plot_test1a_packet_loss(summary: pd.DataFrame, output_dir: Path) -> None:
+    line_plot(summary, "packet_loss", "rmse_m", output_dir, "test1a_rmse_vs_packet_loss", "Packet loss probability", "RMSE (m)", "method")
+    line_plot(summary, "packet_loss", "estimate_availability_pct", output_dir, "test1a_availability_vs_packet_loss", "Packet loss probability", "Availability (%)", "method")
+
+
 def plot_delay(summary: pd.DataFrame, output_dir: Path) -> None:
     line_plot(summary, "delay_s", "rmse_m", output_dir, "rmse_vs_delay", "Communication delay (s)", "RMSE (m)", "timing_mode")
     line_plot(summary, "delay_s", "mean_observation_age_s", output_dir, "capture_vs_arrival_age", "Communication delay (s)", "Mean observation age (s)", "timing_mode")
